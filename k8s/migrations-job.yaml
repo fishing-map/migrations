@@ -1,0 +1,104 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrations
+  namespace: fishing-map
+  labels:
+    app: migrations
+spec:
+  ttlSecondsAfterFinished: 3600  # Mantém job por 1 hora após conclusão
+  backoffLimit: 3  # Tenta 3 vezes se falhar
+  template:
+    metadata:
+      labels:
+        app: migrations
+    spec:
+      restartPolicy: OnFailure
+
+      # Esperar banco estar disponível
+      initContainers:
+      - name: wait-for-database
+        image: postgres:15-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Aguardando PostgreSQL estar disponível..."
+          until pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
+            echo "PostgreSQL não está pronto. Aguardando 5 segundos..."
+            sleep 5
+          done
+          echo "✅ PostgreSQL está pronto!"
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_USER
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_PASSWORD
+
+      containers:
+      - name: migrations
+        image: registry.digitalocean.com/fishing-map-prod/migrations:latest
+        imagePullPolicy: Always  # Sempre puxa última versão
+
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_PORT
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_PASSWORD
+        - name: DB_SSL
+          value: "true"
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+
+        # Security
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # Migrations precisam escrever logs
+
+      imagePullSecrets:
+      - name: registry-fishing-map
+

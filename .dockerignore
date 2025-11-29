@@ -8,3 +8,6 @@ dist
 .github
 README.md
 
+# IMPORTANTE: Garantir que package-lock.json seja incluído
+!package-lock.json
+

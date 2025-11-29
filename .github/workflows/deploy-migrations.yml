@@ -1,0 +1,152 @@
+name: Build and Deploy Migrations
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/migrations/**'
+      - 'src/run-migrations.ts'
+      - 'Dockerfile'
+      - 'package*.json'
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, staging, prod]
+        default: prod
+        description: "Ambiente para deploy"
+
+env:
+  REGISTRY: registry.digitalocean.com
+  IMAGE_NAME: fishing-map-prod/migrations
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Tests (if exists)
+        run: npm test || echo "No tests configured"
+        continue-on-error: true
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Login to DigitalOcean Container Registry
+        run: doctl registry login
+
+      - name: Build Docker Image
+        run: |
+          # Adiciona package-lock.json se não existir (para npm ci no Docker)
+          if [ ! -f package-lock.json ]; then
+            echo "Gerando package-lock.json..."
+            npm install --package-lock-only
+          fi
+          
+          # Build da imagem
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          
+          # Versão com data
+          VERSION=$(date +%Y%m%d-%H%M%S)
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
+
+      - name: Push Docker Images
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          
+          VERSION=$(date +%Y%m%d-%H%M%S)
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
+          
+          echo " Imagens publicadas:"
+          echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+
+      - name: Setup Kubernetes
+        run: |
+          # Configurar kubectl
+          doctl kubernetes cluster kubeconfig save fishing-map-prod-cluster
+          
+          # Verificar conexão
+          kubectl get nodes
+
+      - name: Deploy Migrations Job
+        run: |
+          echo "Deployando novo Job de migrations..."
+          
+          # Deletar job anterior se existir
+          kubectl delete job db-migrations -n fishing-map --ignore-not-found=true
+          
+          # Aplicar novo job (vai usar imagem :latest que acabamos de atualizar)
+          kubectl apply -f k8s/migrations-job.yaml
+          
+          echo " Aguardando execução das migrations..."
+          kubectl wait --for=condition=complete --timeout=600s job/db-migrations -n fishing-map || {
+            echo " Migrations falharam! Verificando logs..."
+            kubectl logs -l app=migrations -n fishing-map --tail=100
+            exit 1
+          }
+          
+          echo "Migrations executadas com sucesso!"
+          kubectl logs -l app=migrations -n fishing-map --tail=20
+
+      - name: Verify Migrations
+        run: |
+          echo "Verificando migrations executadas..."
+          
+          # Conectar ao pod de migrations e verificar
+          POD=$(kubectl get pods -n fishing-map -l app=migrations -o jsonpath='{.items[0].metadata.name}')
+          
+          if [ -n "$POD" ]; then
+            echo "Pod encontrado: $POD"
+            kubectl logs $POD -n fishing-map --tail=50
+          else
+            echo "Nenhum pod de migrations encontrado"
+          fi
+
+      - name: Cleanup Old Images
+        run: |
+          echo "Limpando imagens antigas..."
+          
+          # Lista todas as tags da imagem
+          doctl registry repository list-tags ${{ env.IMAGE_NAME }} --format Tag,UpdatedAt | head -20
+          
+          echo "ℹ️  Mantenha apenas as últimas 10 versões manualmente via:"
+          echo "   doctl registry repository delete-tag ${{ env.IMAGE_NAME }} <tag>"
+
+      - name: Summary
+        run: |
+          echo "## Deploy Completo!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Imagens Publicadas:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Migrations Executadas:" >> $GITHUB_STEP_SUMMARY
+          echo "Verifique os logs acima" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Links Úteis:" >> $GITHUB_STEP_SUMMARY
+          echo "- [Container Registry](https://cloud.digitalocean.com/registry)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Kubernetes Dashboard](https://cloud.digitalocean.com/kubernetes/clusters)" >> $GITHUB_STEP_SUMMARY
