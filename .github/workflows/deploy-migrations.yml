@@ -53,28 +53,27 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          # Gerar versão única
-          VERSION=$(date +%Y%m%d-%H%M%S)
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "Buildando imagem Docker..."
           
-          # Build da imagem
+          # Build da imagem com tag latest
           docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
-          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
           
-          echo "Imagem buildada com tags:"
-          echo " - latest"
-          echo " - ${{ github.sha }}"
-          echo " - ${VERSION}"
+          echo ""
+          echo "Imagem buildada:"
+          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
 
       - name: Push Docker Images
         run: |
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          echo "Enviando imagens para registry..."
           
-          echo "Imagens publicadas:"
+          # Push apenas da tag latest (outras são redundantes)
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          echo ""
+          echo "Imagem publicada:"
           echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo ""
+          echo "Tags alternativas (mesmo conteudo):"
           echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
 
@@ -204,13 +203,12 @@ jobs:
         run: |
           echo "## Deploy Completo!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Imagens Publicadas:" >> $GITHUB_STEP_SUMMARY
+          echo "### Imagem Publicada:" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Migrations Executadas:" >> $GITHUB_STEP_SUMMARY
-          echo "Verifique os logs acima" >> $GITHUB_STEP_SUMMARY
+          echo "### Migrations:" >> $GITHUB_STEP_SUMMARY
+          echo "Verifique os logs acima para detalhes das migrations executadas" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Links Úteis:" >> $GITHUB_STEP_SUMMARY
+          echo "### Links:" >> $GITHUB_STEP_SUMMARY
           echo "- [Container Registry](https://cloud.digitalocean.com/registry)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Kubernetes Dashboard](https://cloud.digitalocean.com/kubernetes/clusters)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Kubernetes](https://cloud.digitalocean.com/kubernetes/clusters)" >> $GITHUB_STEP_SUMMARY
