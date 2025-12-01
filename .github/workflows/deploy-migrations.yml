@@ -14,8 +14,10 @@ on:
         description: "Executar migrations após deploy?"
 
 env:
-  REGISTRY: registry.digitalocean.com
-  IMAGE_NAME: fishing-map-prod/migrations
+  REGISTRY_HOST: registry.digitalocean.com
+  IMAGE_REPO: fishing-map-prod/migrations
+  K8S_NAMESPACE: fishing-map
+  K8S_CLUSTER_NAME: fishing-map-prod-cluster
 
 jobs:
   build-and-deploy:
@@ -43,178 +45,141 @@ jobs:
       - name: Build TypeScript
         run: pnpm run build
 
+      - name: Set IMAGE tag (commit SHA)
+        run: |
+          TAG=${{ github.sha }}
+          IMAGE_FULL=${{ env.REGISTRY_HOST }}/$IMAGE_REPO:${TAG}
+          echo "IMAGE_TAG=${TAG}" >> $GITHUB_ENV
+          echo "IMAGE_FULL=${IMAGE_FULL}" >> $GITHUB_ENV
+          echo "IMAGE_FULL=${IMAGE_FULL}"
+
+      - name: Build Docker Image
+        run: |
+          echo "Building Docker image $IMAGE_FULL"
+          docker build -t $IMAGE_FULL .
+          docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}"
+
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_TOKEN }}
 
       - name: Login to DigitalOcean Container Registry
-        run: doctl registry login
-
-      - name: Build Docker Image
         run: |
-          echo "Buildando imagem Docker..."
-          
-          # Build da imagem com tag latest
-          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
-          
-          echo ""
-          echo "Imagem buildada:"
-          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          # this will write docker config under runner's home (~/.docker/config.json)
+          doctl registry login --expiry-seconds 600
 
-      - name: Push Docker Images
+      - name: Push Docker Image
         run: |
-          echo "Enviando imagens para registry..."
-          
-          # Push apenas da tag latest (outras são redundantes)
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          
-          echo ""
-          echo "Imagem publicada:"
-          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          echo ""
-          echo "Tags alternativas (mesmo conteudo):"
-          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
+          echo "Pushing image $IMAGE_FULL"
+          docker push $IMAGE_FULL
+          echo "Pushed: $IMAGE_FULL"
 
-      - name: Setup Kubernetes
+      - name: Configure kubectl (doctl kubeconfig)
         run: |
-          # Configurar kubectl
-          doctl kubernetes cluster kubeconfig save fishing-map-prod-cluster
-          
-          # Verificar conexão
-          kubectl get nodes
-          
-          # Verificar se namespace existe
-          kubectl get namespace fishing-map || kubectl create namespace fishing-map
-          
-          # Criar/atualizar registry secret
-          echo "Configurando registry secret..."
-          kubectl delete secret registry-secret -n fishing-map --ignore-not-found=true
-          kubectl create secret docker-registry registry-secret \
-            --docker-server=${{ env.REGISTRY }} \
-            --docker-username=${{ secrets.DIGITALOCEAN_TOKEN }} \
-            --docker-password=${{ secrets.DIGITALOCEAN_TOKEN }} \
-            -n fishing-map
-          echo "Registry secret configurado"
-          
-          # Criar/atualizar secret com credenciais do banco
-          echo ""
-          echo "Configurando credenciais do banco de dados..."
-          kubectl delete secret fishing-map-secrets -n fishing-map --ignore-not-found=true
+          doctl kubernetes cluster kubeconfig save ${{ env.K8S_CLUSTER_NAME }}
+          kubectl get nodes || true
+
+      - name: Create/Update registry secret (dockerconfigjson)
+        run: |
+          # copia dockerconfig para criar secret do tipo dockerconfigjson no k8s
+          mkdir -p /tmp/.docker
+          # the runner docker config is usually in /github/home/.docker/config.json or ~/.docker/config.json
+          if [ -f "$HOME/.docker/config.json" ]; then
+            cp "$HOME/.docker/config.json" /tmp/.docker/config.json
+          elif [ -f "/github/home/.docker/config.json" ]; then
+            cp "/github/home/.docker/config.json" /tmp/.docker/config.json
+          else
+            echo "ERRO: docker config.json não encontrado. Assegure doctl registry login executado."
+            ls -la $HOME/.docker || true
+            exit 1
+          fi
+
+          kubectl get namespace ${{ env.K8S_NAMESPACE }} || kubectl create namespace ${{ env.K8S_NAMESPACE }}
+          kubectl delete secret registry-secret -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          kubectl create secret generic registry-secret \
+            --from-file=.dockerconfigjson=/tmp/.docker/config.json \
+            --type=kubernetes.io/dockerconfigjson \
+            -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Create/Update DB credentials secret
+        run: |
+          kubectl delete secret fishing-map-secrets -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
           kubectl create secret generic fishing-map-secrets \
             --from-literal=DB_HOST=${{ secrets.DB_HOST }} \
             --from-literal=DB_PORT=${{ secrets.DB_PORT }} \
             --from-literal=DB_NAME=${{ secrets.DB_NAME }} \
             --from-literal=DB_USER=${{ secrets.DB_USER }} \
             --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            -n fishing-map
-          echo "Credenciais do banco configuradas"
-          
-          echo ""
-          echo "Kubernetes configurado com sucesso"
+            -n ${{ env.K8S_NAMESPACE }}
 
-      - name: Cleanup Old Resources
+      - name: Backup migrations manifest (optional)
         run: |
-          echo "Limpando recursos antigos..."
-          
-          # Deletar jobs de migrations antigos
-          echo "Deletando jobs de migrations antigos..."
-          kubectl delete jobs -n fishing-map -l app=migrations --ignore-not-found=true
-          
-          # Deletar pods com erro
-          echo "Deletando pods com erro..."
-          kubectl delete pods -n fishing-map -l app=migrations --field-selector=status.phase=Failed --ignore-not-found=true
-          kubectl delete pods -n fishing-map -l app=migrations --field-selector=status.phase=Unknown --ignore-not-found=true
-          
-          # Aguardar limpeza
-          sleep 2
-          
-          echo "Recursos antigos limpos"
+          cp k8s/migrations-job.yaml k8s/migrations-job.yaml.bak || true
 
-
-      - name: Deploy Migrations Job
+      - name: Replace image in k8s/migrations-job.yaml with SHA-tagged image
         run: |
-          echo "Deployando novo Job de migrations..."
-          
-          # Aplicar novo job
-          kubectl apply -f k8s/migrations-job.yaml
-          
-          echo ""
-          echo "Aguardando pod iniciar..."
-          sleep 3
-          
-          # Mostrar status em tempo real
-          echo "Status do job:"
-          kubectl get job db-migrations -n fishing-map
-          
-          echo ""
-          echo "Status dos pods:"
-          kubectl get pods -n fishing-map -l app=migrations
-          
-          echo ""
-          echo "Aguardando conclusão (timeout: 5min)..."
-          echo "Acompanhe os logs em tempo real em outra aba:"
-          echo " kubectl logs -f -l app=migrations -n fishing-map"
-          echo ""
-          
-          # Aguardar com timeout reduzido (5min ao invés de 10min)
-          kubectl wait --for=condition=complete --timeout=300s job/db-migrations -n fishing-map || {
-            echo ""
-            echo "Migrations falharam ou timeout!"
-            echo ""
-            echo "Status final do job:"
-            kubectl get job db-migrations -n fishing-map
-            echo ""
-            echo "Status final dos pods:"
-            kubectl get pods -n fishing-map -l app=migrations
-            echo ""
-            echo "Últimos 100 linhas dos logs:"
-            kubectl logs -l app=migrations -n fishing-map --tail=100
-            echo ""
-            echo "Eventos do pod:"
-            kubectl describe pod -l app=migrations -n fishing-map | grep -A 20 Events:
+          # Replace the image line for migrations; this sed assumes there is a single image line for the migrations container.
+          if grep -q "image:" k8s/migrations-job.yaml; then
+            echo "Substituindo image no manifest por: $IMAGE_FULL"
+            # Two-step sed: replace exact registry path with IMAGE_FULL, fallback replace generic image: line
+            sed -i "s|registry.digitalocean.com/fishing-map-prod/migrations:.*|$IMAGE_FULL|g" k8s/migrations-job.yaml || true
+            sed -i "0,/image:/{s|image:.*|image: $IMAGE_FULL|}" k8s/migrations-job.yaml || true
+            echo "Resultado:"
+            grep -n "image:" k8s/migrations-job.yaml || true
+          else
+            echo "AVISO: k8s/migrations-job.yaml não contém 'image:'"
             exit 1
-          }
-          
-          echo ""
-          echo "Migrations executadas com sucesso!"
-          echo ""
-          echo "Logs completos:"
-          kubectl logs -l app=migrations -n fishing-map
+          fi
 
-      - name: Verify Migrations
+      - name: Apply migrations Job to Kubernetes
         run: |
-          echo "Verificando migrations executadas..."
-          
-          # Listar últimos jobs de migrations
-          echo "Últimos jobs de migrations:"
-          kubectl get jobs -n fishing-map -l app=migrations --sort-by=.metadata.creationTimestamp | tail -5
-          
-          echo ""
-          echo "Status dos pods:"
-          kubectl get pods -n fishing-map -l app=migrations --sort-by=.metadata.creationTimestamp | tail -5
+          kubectl apply -f k8s/migrations-job.yaml -n ${{ env.K8S_NAMESPACE }}
 
-      - name: Cleanup Old Images
+      - name: Wait for Job completion and show logs
         run: |
-          echo "Limpando imagens antigas..."
-          
-          # Lista todas as tags da imagem
-          doctl registry repository list-tags ${{ env.IMAGE_NAME }} --format Tag,UpdatedAt | head -20
-          
-          echo "Mantenha apenas as últimas 10 versões manualmente via:"
-          echo "  doctl registry repository delete-tag ${{ env.IMAGE_NAME }} <tag>"
+          set -o pipefail
+          echo "Aguardando job/db-migrations completar (timeout 300s)..."
+          if ! kubectl wait --for=condition=complete --timeout=300s job/db-migrations -n ${{ env.K8S_NAMESPACE }}; then
+            echo "Migrations job falhou ou timeout. Dumping info para debug..."
+            echo "=== JOBs ==="
+            kubectl get jobs -n ${{ env.K8S_NAMESPACE }} -o wide || true
+            echo "=== PODs ==="
+            kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=migrations -o wide || true
+            echo "=== LAST 200 LINES LOGS ==="
+            kubectl logs -l app=migrations -n ${{ env.K8S_NAMESPACE }} --tail=200 || true
+            echo "=== DESCRIBE PODS ==="
+            kubectl describe pod -l app=migrations -n ${{ env.K8S_NAMESPACE }} | sed -n '1,240p' || true
+            exit 1
+          fi
+          echo "Job concluído com sucesso. Exibindo logs completos:"
+          kubectl logs -l app=migrations -n ${{ env.K8S_NAMESPACE }} || true
+
+      - name: Verify Jobs and Pods (summary)
+        run: |
+          echo "Últimos jobs com label app=migrations:"
+          kubectl get jobs -n ${{ env.K8S_NAMESPACE }} -l app=migrations --sort-by=.metadata.creationTimestamp | tail -n 10 || true
+          echo "Pods relacionados:"
+          kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=migrations --sort-by=.metadata.creationTimestamp | tail -n 10 || true
+
+      - name: Cleanup backup manifest (optional)
+        if: always()
+        run: |
+          # restore backup if you want to keep repository manifest untouched in case of sed replacement (optional)
+          if [ -f k8s/migrations-job.yaml.bak ]; then
+            mv k8s/migrations-job.yaml.bak k8s/migrations-job.yaml || true
+          fi
 
       - name: Summary
+        if: success()
         run: |
           echo "## Deploy Completo!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Imagem Publicada:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY_HOST }}/${{ env.IMAGE_REPO }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Migrations:" >> $GITHUB_STEP_SUMMARY
-          echo "Verifique os logs acima para detalhes das migrations executadas" >> $GITHUB_STEP_SUMMARY
+          echo "Job db-migrations aplicado no namespace \`${{ env.K8S_NAMESPACE }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Links:" >> $GITHUB_STEP_SUMMARY
           echo "- [Container Registry](https://cloud.digitalocean.com/registry)" >> $GITHUB_STEP_SUMMARY
-          echo "- [Kubernetes](https://cloud.digitalocean.com/kubernetes/clusters)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Kubernetes Clusters](https://cloud.digitalocean.com/kubernetes/clusters)" >> $GITHUB_STEP_SUMMARY

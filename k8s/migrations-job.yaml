@@ -2,108 +2,71 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: db-migrations
-  namespace: fishing-map
   labels:
     app: migrations
-    component: database
 spec:
-  ttlSecondsAfterFinished: 3600
-  backoffLimit: 2
+  backoffLimit: 1
   template:
     metadata:
       labels:
         app: migrations
     spec:
-      restartPolicy: OnFailure
       imagePullSecrets:
-      - name: registry-secret
-
-      # Wait for database
+        - name: registry-secret
+      restartPolicy: Never
       initContainers:
-      - name: wait-for-database
-        image: postgres:15-alpine
-        command:
-        - sh
-        - -c
-        - |
-          echo "Verificando disponibilidade do PostgreSQL..."
-          for i in $(seq 1 30); do
-            if pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER > /dev/null 2>&1; then
-              echo "PostgreSQL está disponível!"
-              exit 0
-            fi
-            echo "Tentativa $i/30 - Aguardando..."
-            sleep 2
-          done
-          echo "Timeout: PostgreSQL não respondeu"
-          exit 1
-        env:
-        - name: DB_HOST
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_HOST
-        - name: DB_PORT
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_PORT
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_USER
-        - name: PGPASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_PASSWORD
-
+        - name: wait-for-database
+          image: registry.digitalocean.com/fishing-map-prod/wait-tools:latest
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_PORT
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_PASSWORD
+          command: ["sh","-c","/wait-for-db.sh"]
       containers:
-      - name: migrations
-        image: registry.digitalocean.com/fishing-map-prod/migrations:latest
-        imagePullPolicy: Always
-        env:
-        - name: NODE_ENV
-          value: "production"
-        - name: DB_HOST
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_HOST
-        - name: DB_PORT
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_PORT
-        - name: DB_NAME
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_NAME
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_USER
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: DB_PASSWORD
-        - name: DB_SSL
-          value: "true"
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "256Mi"
-            cpu: "200m"
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false
-
-
+        - name: migrations
+          image: registry.digitalocean.com/fishing-map-prod/migrations:latest
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_PASSWORD
+            - name: NODE_ENV
+              value: "production"
