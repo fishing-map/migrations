@@ -134,6 +134,9 @@ jobs:
 
       - name: Apply migrations Job to Kubernetes
         run: |
+          # Delete existing Job if it exists (Jobs are immutable in Kubernetes)
+          kubectl delete job db-migrations -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          # Apply the new Job
           kubectl apply -f k8s/migrations-job.yaml -n ${{ env.K8S_NAMESPACE }}
 
       - name: Wait for Job completion and show logs
