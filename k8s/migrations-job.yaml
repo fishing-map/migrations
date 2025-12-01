@@ -27,7 +27,7 @@ spec:
             echo "PostgreSQL não está pronto. Aguardando 5 segundos..."
             sleep 5
           done
-          echo "✅ PostgreSQL está pronto!"
+          echo "PostgreSQL está pronto!"
         env:
         - name: DB_HOST
           valueFrom:
@@ -59,27 +59,27 @@ spec:
         - name: DB_HOST
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_HOST
         - name: DB_PORT
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_PORT
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_NAME
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_USER
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_PASSWORD
         - name: DB_SSL
           value: "true"

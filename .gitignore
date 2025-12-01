@@ -1,28 +1,45 @@
-# Dependencies
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node
 node_modules/
-package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Build
 dist/
-
-# Environment
-.env
-.env.local
-
-# Logs
-*.log
-npm-debug.log*
-
-# OS
-.DS_Store
-Thumbs.db
+build/
+*.tsbuildinfo
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Backups
-*.bak
-*.backup
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Sensitive data (NEVER COMMIT!)
+*.pem
+*.key
+*.p12
+secrets.json
+credentials.json
+terraform.tfstate
+terraform.tfstate.backup
+
+# Test
+coverage/
+.nyc_output/
+

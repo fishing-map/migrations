@@ -6,7 +6,11 @@
   "scripts": {
     "build": "tsc",
     "migrate": "ts-node src/run-migrations.ts",
+    "migrate:status": "ts-node src/run-migrations.ts --status",
     "migrate:undo": "ts-node src/run-migrations.ts --undo",
+    "migrate:rollback": "ts-node src/run-migrations.ts --rollback",
+    "migrate:rollback-steps": "ts-node src/run-migrations.ts --rollback-steps",
+    "migrate:rollback-to": "ts-node src/run-migrations.ts --rollback-to",
     "migration:create": "ts-node src/create-migration.ts"
   },
   "dependencies": {

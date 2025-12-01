@@ -1,15 +1,6 @@
 name: Build and Deploy Migrations
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'src/migrations/**'
-      - 'src/run-migrations.ts'
-      - 'Dockerfile'
-      - 'package*.json'
   workflow_dispatch:
     inputs:
       environment:
@@ -17,6 +8,10 @@ on:
         options: [dev, staging, prod]
         default: prod
         description: "Ambiente para deploy"
+      run_migrations:
+        type: boolean
+        default: true
+        description: "Executar migrations após deploy?"
 
 env:
   REGISTRY: registry.digitalocean.com
@@ -114,17 +109,15 @@ jobs:
 
       - name: Verify Migrations
         run: |
-          echo "Verificando migrations executadas..."
+          echo "✅ Verificando migrations executadas..."
           
-          # Conectar ao pod de migrations e verificar
-          POD=$(kubectl get pods -n fishing-map -l app=migrations -o jsonpath='{.items[0].metadata.name}')
+          # Listar últimos jobs de migrations
+          echo "📋 Últimos jobs de migrations:"
+          kubectl get jobs -n fishing-map -l app=migrations --sort-by=.metadata.creationTimestamp | tail -5
           
-          if [ -n "$POD" ]; then
-            echo "Pod encontrado: $POD"
-            kubectl logs $POD -n fishing-map --tail=50
-          else
-            echo "Nenhum pod de migrations encontrado"
-          fi
+          echo ""
+          echo "📊 Status dos pods:"
+          kubectl get pods -n fishing-map -l app=migrations --sort-by=.metadata.creationTimestamp | tail -5
 
       - name: Cleanup Old Images
         run: |
