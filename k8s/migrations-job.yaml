@@ -15,13 +15,14 @@ spec:
     spec:
       restartPolicy: OnFailure
 
+      imagePullSecrets:
+      - name: registry-secret
+
       # Esperar banco estar disponível
       initContainers:
       - name: wait-for-database
         image: postgres:15-alpine
         command: ['sh', '-c']
-        args:
-        - |
         args:
         - |
           echo "Aguardando PostgreSQL estar disponível..."
@@ -108,6 +109,4 @@ spec:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: false  # Migrations precisam escrever logs
 
-      imagePullSecrets:
-      - name: registry-fishing-map
 

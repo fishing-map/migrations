@@ -85,6 +85,30 @@ jobs:
           
           # Verificar conexão
           kubectl get nodes
+          
+          # Verificar se namespace existe
+          kubectl get namespace fishing-map || kubectl create namespace fishing-map
+          
+          # Verificar registry secret
+          echo "Verificando registry secret..."
+          kubectl get secret registry-secret -n fishing-map || {
+            echo "Registry secret não encontrado, criando..."
+            kubectl create secret docker-registry registry-secret \
+              --docker-server=${{ env.REGISTRY }} \
+              --docker-username=${{ secrets.DIGITALOCEAN_TOKEN }} \
+              --docker-password=${{ secrets.DIGITALOCEAN_TOKEN }} \
+              -n fishing-map
+          }
+          
+          # Atualizar registry secret (força refresh)
+          kubectl delete secret registry-secret -n fishing-map --ignore-not-found=true
+          kubectl create secret docker-registry registry-secret \
+            --docker-server=${{ env.REGISTRY }} \
+            --docker-username=${{ secrets.DIGITALOCEAN_TOKEN }} \
+            --docker-password=${{ secrets.DIGITALOCEAN_TOKEN }} \
+            -n fishing-map
+          
+          echo "✅ Registry secret configurado"
 
       - name: Cleanup Old Resources
         run: |
