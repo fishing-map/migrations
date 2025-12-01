@@ -86,12 +86,27 @@ jobs:
           # Verificar conexão
           kubectl get nodes
 
+      - name: Cleanup Old Resources
+        run: |
+          echo "Limpando recursos antigos..."
+          
+          # Deletar todos os jobs de migrations antigos
+          echo "Deletando jobs antigos..."
+          kubectl delete jobs -n fishing-map -l app=migrations --ignore-not-found=true
+          
+          # Deletar pods órfãos ou com erro
+          echo "Deletando pods com erro..."
+          kubectl delete pods -n fishing-map -l app=migrations --field-selector=status.phase=Failed --ignore-not-found=true
+          kubectl delete pods -n fishing-map -l app=migrations --field-selector=status.phase=Unknown --ignore-not-found=true
+          
+          # Aguardar limpeza
+          sleep 2
+          
+          echo "Recursos antigos limpos"
+
       - name: Deploy Migrations Job
         run: |
           echo "Deployando novo Job de migrations..."
-          
-          # Deletar job anterior se existir
-          kubectl delete job db-migrations -n fishing-map --ignore-not-found=true
           
           # Aplicar novo job
           kubectl apply -f k8s/migrations-job.yaml
