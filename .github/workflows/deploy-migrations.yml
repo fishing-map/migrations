@@ -52,12 +52,6 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          # Adiciona package-lock.json se não existir (para npm ci no Docker)
-          if [ ! -f package-lock.json ]; then
-            echo "Gerando package-lock.json..."
-            npm install --package-lock-only
-          fi
-          
           # Build da imagem
           docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
           docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -74,7 +68,7 @@ jobs:
           VERSION=$(date +%Y%m%d-%H%M%S)
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
           
-          echo " Imagens publicadas:"
+          echo "Imagens publicadas:"
           echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
           echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
@@ -109,14 +103,14 @@ jobs:
 
       - name: Verify Migrations
         run: |
-          echo "✅ Verificando migrations executadas..."
+          echo "Verificando migrations executadas..."
           
           # Listar últimos jobs de migrations
-          echo "📋 Últimos jobs de migrations:"
+          echo "Últimos jobs de migrations:"
           kubectl get jobs -n fishing-map -l app=migrations --sort-by=.metadata.creationTimestamp | tail -5
           
           echo ""
-          echo "📊 Status dos pods:"
+          echo "Status dos pods:"
           kubectl get pods -n fishing-map -l app=migrations --sort-by=.metadata.creationTimestamp | tail -5
 
       - name: Cleanup Old Images
@@ -126,8 +120,8 @@ jobs:
           # Lista todas as tags da imagem
           doctl registry repository list-tags ${{ env.IMAGE_NAME }} --format Tag,UpdatedAt | head -20
           
-          echo "ℹ️  Mantenha apenas as últimas 10 versões manualmente via:"
-          echo "   doctl registry repository delete-tag ${{ env.IMAGE_NAME }} <tag>"
+          echo "Mantenha apenas as últimas 10 versões manualmente via:"
+          echo "  doctl registry repository delete-tag ${{ env.IMAGE_NAME }} <tag>"
 
       - name: Summary
         run: |

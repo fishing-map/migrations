@@ -2,27 +2,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copiar arquivos de dependências
-COPY package*.json ./
+# Instalar pnpm globalmente
+RUN npm install -g pnpm@8
+
+COPY package.json pnpm-lock.yaml ./
 COPY tsconfig.json ./
 
-# Instalar dependências (npm ci se tiver lock, npm install caso contrário)
-RUN if [ -f package-lock.json ]; then \
-      echo "📦 Usando npm ci (package-lock.json encontrado)"; \
-      npm ci; \
-    else \
-      echo "⚠️  package-lock.json não encontrado, usando npm install"; \
-      npm install; \
-    fi
+RUN pnpm install --frozen-lockfile --prod=false
 
-# Copiar código fonte
 COPY src ./src
 
-# Compilar TypeScript
-RUN npm run build
+RUN pnpm run build
 
-# Remover devDependencies (reduz tamanho da imagem)
-RUN npm prune --omit=dev
+RUN pnpm prune --prod
 
-# Executar migrations
 CMD ["node", "dist/run-migrations.js"]

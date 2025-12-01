@@ -337,16 +337,13 @@ psql -h localhost -U postgres -d fishing_map -c "DROP SCHEMA public CASCADE; CRE
 
 ## 🤝 Contribuindo
 
-1. Leia [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)
-2. Siga as convenções de nomenclatura
-3. Sempre teste localmente
-4. Sempre crie arquivo `.down.sql`
-5. Documente breaking changes
+1. Siga as convenções de nomenclatura
+2. Sempre teste localmente
+3. Sempre crie arquivo `.down.sql`
+4. Documente breaking changes
 
 ## 📞 Suporte
-
 - Issues: GitHub Issues do projeto
-- Docs: [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)
 - DevOps: Consulte a equipe
 
 ---
