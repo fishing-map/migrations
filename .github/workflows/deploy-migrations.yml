@@ -111,6 +111,7 @@ jobs:
             --from-literal=DB_NAME=${{ secrets.DB_NAME }} \
             --from-literal=DB_USER=${{ secrets.DB_USER }} \
             --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            --from-literal=DB_SCHEMA=fishing_map \
             -n ${{ env.K8S_NAMESPACE }}
 
       - name: Backup migrations manifest (optional)
@@ -119,12 +120,11 @@ jobs:
 
       - name: Replace image in k8s/migrations-job.yaml with SHA-tagged image
         run: |
-          # Replace the image line for migrations; this sed assumes there is a single image line for the migrations container.
+          # Replace ALL image lines for migrations (init container + main container)
           if grep -q "image:" k8s/migrations-job.yaml; then
-            echo "Substituindo image no manifest por: $IMAGE_FULL"
-            # Two-step sed: replace exact registry path with IMAGE_FULL, fallback replace generic image: line
-            sed -i "s|registry.digitalocean.com/fishing-map-prod/migrations:.*|$IMAGE_FULL|g" k8s/migrations-job.yaml || true
-            sed -i "0,/image:/{s|image:.*|image: $IMAGE_FULL|}" k8s/migrations-job.yaml || true
+            echo "Substituindo TODAS as imagens no manifest por: $IMAGE_FULL"
+            # Replace all occurrences of migrations image
+            sed -i "s|image: registry.digitalocean.com/fishing-map-prod/migrations:.*|image: $IMAGE_FULL|g" k8s/migrations-job.yaml
             echo "Resultado:"
             grep -n "image:" k8s/migrations-job.yaml || true
           else
@@ -132,12 +132,20 @@ jobs:
             exit 1
           fi
 
-      - name: Apply migrations Job to Kubernetes
+      - name: Delete old Job and Apply new migrations Job
         run: |
           # Delete existing Job if it exists (Jobs are immutable in Kubernetes)
+          echo "Deletando job anterior se existir..."
           kubectl delete job db-migrations -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          echo "Aguardando pods serem removidos..."
+          sleep 5
           # Apply the new Job
+          echo "Aplicando novo job de migrations..."
           kubectl apply -f k8s/migrations-job.yaml -n ${{ env.K8S_NAMESPACE }}
+          echo "Job aplicado. Aguardando pod ser criado..."
+          sleep 3
+          kubectl get job db-migrations -n ${{ env.K8S_NAMESPACE }}
+          kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=migrations
 
       - name: Wait for Job completion and show logs
         run: |

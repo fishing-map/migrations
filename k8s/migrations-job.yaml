@@ -38,6 +38,8 @@ spec:
                 secretKeyRef:
                   name: fishing-map-secrets
                   key: DB_PASSWORD
+            - name: DB_SSL
+              value: "require"  # DigitalOcean managed PostgreSQL requires SSL
           command: ["sh","-c","/wait-for-db.sh"]
       containers:
         - name: migrations
@@ -73,5 +75,7 @@ spec:
                 secretKeyRef:
                   name: fishing-map-secrets
                   key: DB_SCHEMA
+            - name: DB_SSL
+              value: "require"  # DigitalOcean managed PostgreSQL requires SSL
             - name: NODE_ENV
               value: "production"

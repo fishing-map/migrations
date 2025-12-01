@@ -19,13 +19,19 @@ class MigrationRunner {
   constructor() {
     this.appSchema = process.env.DB_SCHEMA || 'fishing_map';
 
+    // SSL configuration for managed PostgreSQL (DigitalOcean, AWS RDS, etc.)
+    const sslMode = process.env.DB_SSL || 'disable';
+    const sslConfig = (sslMode === 'require' || sslMode === 'true')
+      ? { rejectUnauthorized: false }
+      : false;
+
     const dbConfig = {
       host: process.env.DB_HOST || 'localhost',
       port: Number.parseInt(process.env.DB_PORT || '5432', 10),
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'postgres',
       database: process.env.DB_NAME || 'defaultdb',
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      ssl: sslConfig,
     };
 
     console.log('=== Configuração ===');
