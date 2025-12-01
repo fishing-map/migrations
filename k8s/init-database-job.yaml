@@ -1,0 +1,116 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-database
+  namespace: fishing-map
+  labels:
+    app: init-database
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: init-database
+    spec:
+      restartPolicy: OnFailure
+
+      containers:
+      - name: init-db
+        image: postgres:15-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          set -e
+          
+          echo "Inicializando banco de dados fishing_map..."
+          echo ""
+          echo "Configuracao:"
+          echo "  Host: $DB_HOST"
+          echo "  Port: $DB_PORT"
+          echo "  Database: $DB_NAME"
+          echo "  User: $DB_USER"
+          echo ""
+          
+          # Testar conexao
+          echo "Testando conexao..."
+          if ! PGPASSWORD="$DB_PASSWORD" pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER"; then
+            echo "Erro: Nao foi possivel conectar ao banco"
+            exit 1
+          fi
+          echo "Conexao OK"
+          echo ""
+          
+          # Conectar e executar SQL
+          echo "Executando inicializacao..."
+          PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<-EOSQL
+            -- Verificar usuario atual
+            SELECT 'Usuario conectado: ' || current_user AS info;
+            SELECT 'Database: ' || current_database() AS info;
+            
+            -- Criar schema public se nao existir
+            CREATE SCHEMA IF NOT EXISTS public;
+            
+            -- Tentar dar permissoes (ignora erro se nao for doadmin)
+            DO \$\$
+            BEGIN
+              -- Dar permissoes ao fishing_user se existir
+              IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fishing_user') THEN
+                EXECUTE 'GRANT ALL PRIVILEGES ON SCHEMA public TO fishing_user';
+                EXECUTE 'GRANT ALL PRIVILEGES ON DATABASE fishing_map TO fishing_user';
+                EXECUTE 'GRANT CREATE ON SCHEMA public TO fishing_user';
+                EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO fishing_user';
+                EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO fishing_user';
+                EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO fishing_user';
+                RAISE NOTICE 'Permissoes configuradas para fishing_user';
+              ELSE
+                RAISE NOTICE 'Usuario fishing_user nao existe';
+              END IF;
+            EXCEPTION
+              WHEN OTHERS THEN
+                RAISE NOTICE 'Aviso: Nao foi possivel configurar permissoes (pode nao ser superuser)';
+            END;
+            \$\$;
+            
+            -- Confirmar
+            SELECT 'Banco inicializado' AS status;
+          EOSQL
+          
+          echo ""
+          echo "Banco de dados inicializado com sucesso!"
+
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PORT
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PASSWORD
+
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+

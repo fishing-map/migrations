@@ -113,19 +113,50 @@ jobs:
         run: |
           echo "Limpando recursos antigos..."
           
-          # Deletar todos os jobs de migrations antigos
-          echo "Deletando jobs antigos..."
+          # Deletar todos os jobs antigos
+          echo "Deletando jobs de migrations antigos..."
           kubectl delete jobs -n fishing-map -l app=migrations --ignore-not-found=true
           
-          # Deletar pods órfãos ou com erro
+          echo "Deletando job de inicializacao antigo..."
+          kubectl delete job init-database -n fishing-map --ignore-not-found=true
+          
+          # Deletar pods orfaos ou com erro
           echo "Deletando pods com erro..."
           kubectl delete pods -n fishing-map -l app=migrations --field-selector=status.phase=Failed --ignore-not-found=true
           kubectl delete pods -n fishing-map -l app=migrations --field-selector=status.phase=Unknown --ignore-not-found=true
+          kubectl delete pods -n fishing-map -l app=init-database --field-selector=status.phase=Failed --ignore-not-found=true
           
           # Aguardar limpeza
           sleep 2
           
           echo "Recursos antigos limpos"
+
+      - name: Initialize Database
+        run: |
+          echo "Inicializando banco de dados (executado apenas se necessario)..."
+          
+          # Aplicar job de inicializacao
+          kubectl apply -f k8s/init-database-job.yaml
+          
+          echo ""
+          echo "Aguardando inicializacao do banco (timeout: 60s)..."
+          kubectl wait --for=condition=complete --timeout=60s job/init-database -n fishing-map || {
+            echo ""
+            echo "Erro ao inicializar banco!"
+            echo ""
+            echo "Status do job:"
+            kubectl get job init-database -n fishing-map
+            echo ""
+            echo "Logs:"
+            kubectl logs -l app=init-database -n fishing-map --tail=50
+            exit 1
+          }
+          
+          echo ""
+          echo "Banco inicializado com sucesso!"
+          echo ""
+          echo "Logs da inicializacao:"
+          kubectl logs -l app=init-database -n fishing-map
 
       - name: Deploy Migrations Job
         run: |
