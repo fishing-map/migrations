@@ -14,8 +14,11 @@ interface Migration {
 class MigrationRunner {
   private readonly pool: Pool;
   private readonly migrationsDir: string;
+  private readonly appSchema: string;
 
   constructor() {
+    this.appSchema = process.env.DB_SCHEMA || 'fishing_map';
+
     const dbConfig = {
       host: process.env.DB_HOST || 'localhost',
       port: Number.parseInt(process.env.DB_PORT || '5432', 10),
@@ -28,6 +31,7 @@ class MigrationRunner {
     console.log('=== Configuração ===');
     console.log(`Host: ${dbConfig.host}:${dbConfig.port}`);
     console.log(`Database: ${dbConfig.database}`);
+    console.log(`Schema: ${this.appSchema}`);
     console.log(`User: ${dbConfig.user}`);
     console.log(`SSL: ${dbConfig.ssl ? 'habilitado' : 'desabilitado'}\n`);
 
@@ -50,8 +54,9 @@ class MigrationRunner {
       console.log(`User: ${current_user}`);
       console.log(`PostgreSQL: ${version.split(',')[0]}`);
 
-      await this.pool.query('SET search_path TO public');
-      console.log('Search path: public\n');
+      // Configurar search_path para incluir o schema da aplicação
+      await this.pool.query(`SET search_path TO ${this.appSchema}, public`);
+      console.log(`Search path: ${this.appSchema}, public\n`);
 
     } catch (error) {
       console.error('❌ Erro ao conectar:', error);
@@ -107,7 +112,7 @@ class MigrationRunner {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET search_path TO public');
+      await client.query(`SET search_path TO ${this.appSchema}, public`);
       await client.query(sql);
       await client.query(
         'INSERT INTO public.schema_migrations (name) VALUES ($1)',
@@ -181,7 +186,7 @@ class MigrationRunner {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET search_path TO public');
+      await client.query(`SET search_path TO ${this.appSchema}, public`);
       await client.query(sql);
       await client.query(
         'DELETE FROM public.schema_migrations WHERE id = $1',

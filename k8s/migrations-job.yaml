@@ -16,7 +16,7 @@ spec:
       restartPolicy: Never
       initContainers:
         - name: wait-for-database
-          image: registry.digitalocean.com/fishing-map-prod/wait-tools:latest
+          image: registry.digitalocean.com/fishing-map-prod/migrations:latest
           env:
             - name: DB_HOST
               valueFrom:
@@ -68,5 +68,10 @@ spec:
                 secretKeyRef:
                   name: fishing-map-secrets
                   key: DB_PASSWORD
+            - name: DB_SCHEMA
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_SCHEMA
             - name: NODE_ENV
               value: "production"
