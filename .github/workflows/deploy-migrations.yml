@@ -88,26 +88,31 @@ jobs:
           # Verificar se namespace existe
           kubectl get namespace fishing-map || kubectl create namespace fishing-map
           
-          # Verificar registry secret
-          echo "Verificando registry secret..."
-          kubectl get secret registry-secret -n fishing-map || {
-            echo "Registry secret não encontrado, criando..."
-            kubectl create secret docker-registry registry-secret \
-              --docker-server=${{ env.REGISTRY }} \
-              --docker-username=${{ secrets.DIGITALOCEAN_TOKEN }} \
-              --docker-password=${{ secrets.DIGITALOCEAN_TOKEN }} \
-              -n fishing-map
-          }
-          
-          # Atualizar registry secret (força refresh)
+          # Criar/atualizar registry secret
+          echo "Configurando registry secret..."
           kubectl delete secret registry-secret -n fishing-map --ignore-not-found=true
           kubectl create secret docker-registry registry-secret \
             --docker-server=${{ env.REGISTRY }} \
             --docker-username=${{ secrets.DIGITALOCEAN_TOKEN }} \
             --docker-password=${{ secrets.DIGITALOCEAN_TOKEN }} \
             -n fishing-map
+          echo "Registry secret configurado"
           
-          echo "✅ Registry secret configurado"
+          # Criar/atualizar secret com credenciais do banco
+          echo ""
+          echo "Configurando credenciais do banco de dados..."
+          kubectl delete secret fishing-map-secrets -n fishing-map --ignore-not-found=true
+          kubectl create secret generic fishing-map-secrets \
+            --from-literal=DB_HOST=${{ secrets.DB_HOST }} \
+            --from-literal=DB_PORT=${{ secrets.DB_PORT }} \
+            --from-literal=DB_NAME=${{ secrets.DB_NAME }} \
+            --from-literal=DB_USER=${{ secrets.DB_USER }} \
+            --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            -n fishing-map
+          echo "Credenciais do banco configuradas"
+          
+          echo ""
+          echo "Kubernetes configurado com sucesso"
 
       - name: Cleanup Old Resources
         run: |
