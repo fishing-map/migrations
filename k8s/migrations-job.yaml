@@ -5,39 +5,38 @@ metadata:
   namespace: fishing-map
   labels:
     app: migrations
+    component: database
 spec:
-  ttlSecondsAfterFinished: 3600  # Mantém job por 1 hora após conclusão
-  backoffLimit: 3  # Tenta 3 vezes se falhar
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 2
   template:
     metadata:
       labels:
         app: migrations
     spec:
       restartPolicy: OnFailure
-
       imagePullSecrets:
       - name: registry-secret
 
-      # Esperar banco estar disponível
+      # Wait for database
       initContainers:
       - name: wait-for-database
         image: postgres:15-alpine
-        command: ['sh', '-c']
-        args:
+        command:
+        - sh
+        - -c
         - |
-          echo "Aguardando PostgreSQL estar disponível..."
-          RETRY=0
-          MAX_RETRIES=30
-          until pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
-            RETRY=$((RETRY+1))
-            if [ $RETRY -gt $MAX_RETRIES ]; then
-              echo "Timeout: PostgreSQL não respondeu após ${MAX_RETRIES} tentativas"
-              exit 1
+          echo "Verificando disponibilidade do PostgreSQL..."
+          for i in $(seq 1 30); do
+            if pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER > /dev/null 2>&1; then
+              echo "PostgreSQL está disponível!"
+              exit 0
             fi
-            echo "Tentativa $RETRY/$MAX_RETRIES - Aguardando 2 segundos..."
+            echo "Tentativa $i/30 - Aguardando..."
             sleep 2
           done
-          echo "PostgreSQL está pronto!"
+          echo "Timeout: PostgreSQL não respondeu"
+          exit 1
         env:
         - name: DB_HOST
           valueFrom:
@@ -63,9 +62,10 @@ spec:
       containers:
       - name: migrations
         image: registry.digitalocean.com/fishing-map-prod/migrations:latest
-        imagePullPolicy: Always  # Sempre puxa última versão
-
+        imagePullPolicy: Always
         env:
+        - name: NODE_ENV
+          value: "production"
         - name: DB_HOST
           valueFrom:
             secretKeyRef:
@@ -93,20 +93,17 @@ spec:
               key: DB_PASSWORD
         - name: DB_SSL
           value: "true"
-
         resources:
           requests:
             memory: "128Mi"
             cpu: "100m"
           limits:
             memory: "256Mi"
-            cpu: "500m"
-
-        # Security
+            cpu: "200m"
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false  # Migrations precisam escrever logs
+          readOnlyRootFilesystem: false
 
 

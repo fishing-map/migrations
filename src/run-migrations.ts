@@ -20,91 +20,61 @@ class MigrationRunner {
       host: process.env.DB_HOST || 'localhost',
       port: Number.parseInt(process.env.DB_PORT || '5432', 10),
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASS || process.env.DB_PASSWORD || 'postgres',
-      database: process.env.DB_NAME || 'fishing_map',
+      password: process.env.DB_PASSWORD || 'postgres',
+      database: process.env.DB_NAME || 'defaultdb',
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     };
 
-    console.log('Configuracao de conexao:');
-    console.log(`  Host: ${dbConfig.host}`);
-    console.log(`  Port: ${dbConfig.port}`);
-    console.log(`  User: ${dbConfig.user}`);
-    console.log(`  Database: ${dbConfig.database}`);
-    console.log(`  SSL: ${dbConfig.ssl ? 'habilitado' : 'desabilitado'}`);
-    console.log('');
+    console.log('=== Configuração ===');
+    console.log(`Host: ${dbConfig.host}:${dbConfig.port}`);
+    console.log(`Database: ${dbConfig.database}`);
+    console.log(`User: ${dbConfig.user}`);
+    console.log(`SSL: ${dbConfig.ssl ? 'habilitado' : 'desabilitado'}\n`);
 
     this.pool = new Pool(dbConfig);
 
-    // Em produção (Docker), migrations estão em /app/src/migrations
-    // Em desenvolvimento, estão em src/migrations relativos a este arquivo
-    const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync('/app/src/migrations');
-    this.migrationsDir = isProduction
+    this.migrationsDir = process.env.NODE_ENV === 'production'
       ? '/app/src/migrations'
       : path.join(__dirname, 'migrations');
 
-    console.log(`Diretorio de migrations: ${this.migrationsDir}`);
-    console.log('');
+    console.log(`Migrations: ${this.migrationsDir}\n`);
   }
 
   async validateConnection(): Promise<void> {
     try {
-      const result = await this.pool.query('SELECT current_database(), current_user, current_schema()');
-      const { current_database, current_user, current_schema } = result.rows[0];
-      console.log(`Conectado ao banco: ${current_database} como usuário: ${current_user}`);
-      console.log(`Schema atual: ${current_schema || 'nenhum'}`);
+      const result = await this.pool.query('SELECT current_database(), current_user, version()');
+      const { current_database, current_user, version } = result.rows[0];
 
-      // Garantir que estamos usando o schema public
+      console.log('=== Conexão Validada ===');
+      console.log(`Database: ${current_database}`);
+      console.log(`User: ${current_user}`);
+      console.log(`PostgreSQL: ${version.split(',')[0]}`);
+
       await this.pool.query('SET search_path TO public');
-      console.log('Search path configurado para: public');
-
-      // Verificar se podemos acessar o schema public
-      const schemaCheck = await this.pool.query(`
-        SELECT schema_name 
-        FROM information_schema.schemata 
-        WHERE schema_name = 'public'
-      `);
-
-      if (schemaCheck.rows.length === 0) {
-        console.error('Schema "public" não existe no banco de dados!');
-        throw new Error('Schema public não encontrado');
-      }
-
-      console.log('Schema public verificado');
+      console.log('Search path: public\n');
 
     } catch (error) {
-      console.error('Erro ao validar conexão com banco de dados:', error);
-      throw new Error('Falha na conexão com o banco de dados');
+      console.error('❌ Erro ao conectar:', error);
+      throw error;
     }
   }
 
   async ensureMigrationsTable(): Promise<void> {
     try {
-      // Garantir que estamos no schema correto
-      await this.pool.query('SET search_path TO public');
-
-      // Criar tabela de migrations com schema explícito
-      const query = `
+      await this.pool.query(`
         CREATE TABLE IF NOT EXISTS public.schema_migrations (
           id SERIAL PRIMARY KEY,
           name VARCHAR(255) NOT NULL UNIQUE,
           executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `;
+        )
+      `);
 
-      await this.pool.query(query);
-      console.log('Tabela de migrations criada/verificada');
-
-      // Verificar se conseguimos acessar a tabela
-      const checkQuery = `
-        SELECT COUNT(*) as count 
-        FROM public.schema_migrations
-      `;
-      const result = await this.pool.query(checkQuery);
-      console.log(`Migrations já executadas: ${result.rows[0].count}`);
+      const result = await this.pool.query('SELECT COUNT(*) as count FROM public.schema_migrations');
+      console.log(`=== Migrations ===`);
+      console.log(`Executadas: ${result.rows[0].count}\n`);
 
     } catch (error) {
-      console.error('Erro ao criar tabela schema_migrations:', error);
-      console.error('Detalhes do erro:', JSON.stringify(error, null, 2));
+      console.error('Erro ao criar tabela:', error);
       throw error;
     }
   }
@@ -132,29 +102,22 @@ class MigrationRunner {
     const filePath = path.join(this.migrationsDir, filename);
     const sql = fs.readFileSync(filePath, 'utf-8');
 
-    console.log(`Executando migration: ${filename}`);
+    console.log(`🔄 Executando: ${filename}`);
 
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-
-      // Garantir que estamos no schema correto
       await client.query('SET search_path TO public');
-
-      // Executar SQL da migration
       await client.query(sql);
-
-      // Registrar migration como executada
       await client.query(
         'INSERT INTO public.schema_migrations (name) VALUES ($1)',
         [filename]
       );
-
       await client.query('COMMIT');
-      console.log(`Migration executada com sucesso: ${filename}`);
+      console.log(`✅ Concluída: ${filename}\n`);
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error(`Erro ao executar migration ${filename}:`, error);
+      console.error(`❌ Erro em ${filename}:`, error);
       throw error;
     } finally {
       client.release();
@@ -162,7 +125,7 @@ class MigrationRunner {
   }
 
   async runPendingMigrations(): Promise<void> {
-    console.log('Iniciando execução de migrations...\n');
+    console.log('🚀 Iniciando migrations...\n');
 
     await this.validateConnection();
     await this.ensureMigrationsTable();
@@ -170,25 +133,23 @@ class MigrationRunner {
     const pendingMigrations = await this.getPendingMigrations();
 
     if (pendingMigrations.length === 0) {
-      console.log('Nenhuma migration pendente. Banco de dados está atualizado!\n');
+      console.log('✅ Banco atualizado! Nenhuma migration pendente.\n');
       return;
     }
 
-    console.log(`${pendingMigrations.length} migration(s) pendente(s):\n`);
-    for (const name of pendingMigrations) {
-      console.log(`   - ${name}`);
-    }
+    console.log(`📋 ${pendingMigrations.length} migration(s) pendente(s):\n`);
+    pendingMigrations.forEach(name => console.log(`   • ${name}`));
     console.log('');
 
     for (const migration of pendingMigrations) {
       await this.runMigration(migration);
     }
 
-    console.log('\nTodas as migrations foram executadas com sucesso!');
+    console.log('🎉 Todas as migrations concluídas!\n');
   }
 
   async undoLastMigration(): Promise<void> {
-    console.log('Desfazendo última migration...\n');
+    console.log('⏪ Desfazendo última migration...\n');
 
     await this.validateConnection();
     await this.ensureMigrationsTable();
@@ -196,11 +157,11 @@ class MigrationRunner {
     const executedMigrations = await this.getExecutedMigrations();
 
     if (executedMigrations.length === 0) {
-      console.log('Nenhuma migration executada para desfazer.');
+      console.log('⚠️  Nenhuma migration para desfazer.\n');
       return;
     }
 
-    const lastMigration = executedMigrations[executedMigrations.length - 1];
+    const lastMigration = executedMigrations.at(-1)!;
     await this.rollbackMigration(lastMigration);
   }
 
@@ -209,32 +170,28 @@ class MigrationRunner {
     const filePath = path.join(this.migrationsDir, filename);
 
     if (!fs.existsSync(filePath)) {
-      console.error(`Arquivo de rollback não encontrado: ${filename}`);
+      console.error(`❌ Rollback não encontrado: ${filename}`);
       throw new Error(`Rollback file not found: ${filename}`);
     }
 
     const sql = fs.readFileSync(filePath, 'utf-8');
 
-    console.log(`Desfazendo migration: ${migration.name}`);
+    console.log(`🔄 Desfazendo: ${migration.name}`);
 
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-
-      // Executar SQL de rollback
+      await client.query('SET search_path TO public');
       await client.query(sql);
-
-      // Remover registro da migration
       await client.query(
         'DELETE FROM public.schema_migrations WHERE id = $1',
         [migration.id]
       );
-
       await client.query('COMMIT');
-      console.log(`Migration desfeita com sucesso: ${migration.name}`);
+      console.log(`✅ Rollback concluído: ${migration.name}\n`);
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error(`Erro ao desfazer migration:`, error);
+      console.error(`❌ Erro no rollback:`, error);
       throw error;
     } finally {
       client.release();
@@ -242,7 +199,7 @@ class MigrationRunner {
   }
 
   async rollbackToVersion(targetVersion: string): Promise<void> {
-    console.log(`Rollback para versão: ${targetVersion}\n`);
+    console.log(`⏪ Rollback para: ${targetVersion}\n`);
 
     await this.validateConnection();
     await this.ensureMigrationsTable();
@@ -250,11 +207,10 @@ class MigrationRunner {
     const executedMigrations = await this.getExecutedMigrations();
 
     if (executedMigrations.length === 0) {
-      console.log('Nenhuma migration executada.');
+      console.log('⚠️  Nenhuma migration executada.\n');
       return;
     }
 
-    // Encontrar migrations para desfazer (em ordem reversa)
     const migrationsToRollback: Migration[] = [];
     let foundTarget = false;
 
@@ -270,33 +226,30 @@ class MigrationRunner {
     }
 
     if (!foundTarget) {
-      console.error(`Versão não encontrada: ${targetVersion}`);
-      console.log('\nMigrations disponíveis:');
-      executedMigrations.forEach(m => console.log(`   - ${m.name}`));
+      console.error(`❌ Versão não encontrada: ${targetVersion}`);
+      console.log('\n📋 Migrations disponíveis:');
+      executedMigrations.forEach(m => console.log(`   • ${m.name}`));
       return;
     }
 
     if (migrationsToRollback.length === 0) {
-      console.log('Já está na versão especificada.');
+      console.log('✅ Já está na versão especificada.\n');
       return;
     }
 
-    console.log(` ${migrationsToRollback.length} migration(s) para desfazer:\n`);
-    for (const migration of migrationsToRollback) {
-      console.log(`   - ${migration.name}`);
-    }
+    console.log(`📋 ${migrationsToRollback.length} migration(s) para desfazer:\n`);
+    migrationsToRollback.forEach(m => console.log(`   • ${m.name}`));
     console.log('');
 
-    // Desfazer em ordem reversa
     for (const migration of migrationsToRollback) {
       await this.rollbackMigration(migration);
     }
 
-    console.log(`\nRollback completo! Agora na versão: ${targetVersion}`);
+    console.log('🎉 Rollback concluído!\n');
   }
 
   async rollbackSteps(steps: number): Promise<void> {
-    console.log(`Desfazendo ${steps} migration(s)...\n`);
+    console.log(`⏪ Desfazendo ${steps} migration(s)...\n`);
 
     await this.validateConnection();
     await this.ensureMigrationsTable();
@@ -304,68 +257,56 @@ class MigrationRunner {
     const executedMigrations = await this.getExecutedMigrations();
 
     if (executedMigrations.length === 0) {
-      console.log('Nenhuma migration executada para desfazer.');
+      console.log('⚠️  Nenhuma migration executada.\n');
       return;
     }
 
     const migrationsToRollback = executedMigrations
-      .slice(-steps)
-      .reverse();
+      .reverse()
+      .slice(0, steps);
 
-    if (migrationsToRollback.length < steps) {
-      console.log(`Solicitado desfazer ${steps} migrations, mas apenas ${migrationsToRollback.length} disponível(is).`);
-    }
-
-    console.log(`📋 ${migrationsToRollback.length} migration(s) para desfazer:\n`);
-    for (const migration of migrationsToRollback) {
-      console.log(`   - ${migration.name}`);
-    }
+    console.log(`📋 Desfazendo ${migrationsToRollback.length} migration(s):\n`);
+    migrationsToRollback.forEach(m => console.log(`   • ${m.name}`));
     console.log('');
 
     for (const migration of migrationsToRollback) {
       await this.rollbackMigration(migration);
     }
 
-    console.log(`\n${migrationsToRollback.length} migration(s) desfeita(s) com sucesso!`);
+    console.log('🎉 Rollback concluído!\n');
   }
 
   async showStatus(): Promise<void> {
-    console.log('Status das Migrations\n');
-    console.log('='.repeat(60));
-
     await this.validateConnection();
     await this.ensureMigrationsTable();
 
     const executedMigrations = await this.getExecutedMigrations();
     const pendingMigrations = await this.getPendingMigrations();
 
-    console.log('\nMigrations Executadas:');
-    if (executedMigrations.length === 0) {
-      console.log('   (nenhuma)');
-    } else {
+    console.log('=== Status das Migrations ===\n');
+
+    if (executedMigrations.length > 0) {
+      console.log(`✅ Executadas (${executedMigrations.length}):`);
       executedMigrations.forEach((m, index) => {
         const date = new Date(m.executed_at).toLocaleString('pt-BR');
         console.log(`   ${index + 1}. ${m.name} (${date})`);
       });
+      console.log('');
     }
 
-    console.log('\nMigrations Pendentes:');
-    if (pendingMigrations.length === 0) {
-      console.log('   (nenhuma)');
-    } else {
+    if (pendingMigrations.length > 0) {
+      console.log(`⏳ Pendentes (${pendingMigrations.length}):`);
       pendingMigrations.forEach((m, index) => {
         console.log(`   ${index + 1}. ${m}`);
       });
+      console.log('');
     }
 
-    console.log('\n' + '═'.repeat(60));
-    console.log(`Total: ${executedMigrations.length} executadas | ${pendingMigrations.length} pendentes`);
-
-    if (executedMigrations.length > 0) {
-      const lastMigration = executedMigrations[executedMigrations.length - 1];
-      console.log(`Versão atual: ${lastMigration.name}`);
+    if (pendingMigrations.length === 0 && executedMigrations.length > 0) {
+      const lastMigration = executedMigrations.at(-1)!;
+      console.log('✅ Banco atualizado!');
+      console.log(`Última migration: ${lastMigration.name}\n`);
     }
-    console.log('');
   }
 
   async close(): Promise<void> {
@@ -373,73 +314,40 @@ class MigrationRunner {
   }
 }
 
-// Executar migrations
 async function main() {
   const runner = new MigrationRunner();
+  const args = process.argv.slice(2);
 
   try {
-    const args = process.argv.slice(2);
-
-    // Comandos disponíveis
-    if (args.includes('--undo') || args.includes('--rollback')) {
-      // Rollback de última migration
+    if (args.includes('--status')) {
+      await runner.showStatus();
+    } else if (args.includes('--undo')) {
+      await runner.undoLastMigration();
+    } else if (args.includes('--rollback')) {
       await runner.undoLastMigration();
     } else if (args.includes('--rollback-to')) {
-      // Rollback para versão específica
-      const versionIndex = args.findIndex(arg => arg === '--rollback-to');
-      const version = args[versionIndex + 1];
-
-      if (!version) {
-        console.error('Erro: Versão não especificada');
-        console.log('Uso: npm run migrate -- --rollback-to V1.0.5__migration_name.sql');
+      const versionIndex = args.indexOf('--rollback-to');
+      const targetVersion = args[versionIndex + 1];
+      if (!targetVersion) {
+        console.error('Erro: Especifique a versão de destino');
+        console.log('Uso: npm run migrate:rollback-to <versão>');
         process.exit(1);
       }
-
-      await runner.rollbackToVersion(version);
+      await runner.rollbackToVersion(targetVersion);
     } else if (args.includes('--rollback-steps')) {
-      // Rollback N migrations
-      const stepsIndex = args.findIndex(arg => arg === '--rollback-steps');
-      const stepsStr = args[stepsIndex + 1];
-      const steps = Number.parseInt(stepsStr, 10);
-
-      if (!stepsStr || Number.isNaN(steps) || steps <= 0) {
-        console.error('Erro: Número de steps inválido');
-        console.log('Uso: npm run migrate -- --rollback-steps 3');
+      const stepsIndex = args.indexOf('--rollback-steps');
+      const steps = Number.parseInt(args[stepsIndex + 1], 10);
+      if (Number.isNaN(steps) || steps <= 0) {
+        console.error('Erro: Especifique um número válido de steps');
+        console.log('Uso: npm run migrate:rollback-steps <número>');
         process.exit(1);
       }
-
       await runner.rollbackSteps(steps);
-    } else if (args.includes('--status')) {
-      // Mostrar status
-      await runner.showStatus();
-    } else if (args.includes('--help') || args.includes('-h')) {
-      // Ajuda
-      console.log('  Migrations Runner - Fishing Map\n');
-      console.log('Comandos disponíveis:\n');
-      console.log('  npm run migrate');
-      console.log('    Executa todas migrations pendentes\n');
-      console.log('  npm run migrate -- --undo');
-      console.log('  npm run migrate -- --rollback');
-      console.log('    Desfaz última migration\n');
-      console.log('  npm run migrate -- --rollback-steps <N>');
-      console.log('    Desfaz as últimas N migrations');
-      console.log('    Exemplo: npm run migrate -- --rollback-steps 3\n');
-      console.log('  npm run migrate -- --rollback-to <version>');
-      console.log('    Desfaz migrations até a versão especificada');
-      console.log('    Exemplo: npm run migrate -- --rollback-to V1.0.5\n');
-      console.log('  npm run migrate -- --status');
-      console.log('    Mostra status de migrations (executadas e pendentes)\n');
-      console.log('  npm run migrate -- --help');
-      console.log('    Mostra esta ajuda\n');
-      process.exit(0);
     } else {
-      // Comando padrão: executar migrations pendentes
       await runner.runPendingMigrations();
     }
-
-    process.exit(0);
   } catch (error) {
-    console.error('Erro fatal:', error);
+    console.error('\nErro fatal:', error);
     process.exit(1);
   } finally {
     await runner.close();
@@ -447,3 +355,4 @@ async function main() {
 }
 
 main();
+
