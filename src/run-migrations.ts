@@ -103,8 +103,29 @@ class MigrationRunner {
 
     const allMigrations = fs
       .readdirSync(this.migrationsDir)
-      .filter((file: string) => file.endsWith('.sql'))
-      .sort();
+      // include only up migrations (exclude rollback files like .down.sql)
+      .filter((file: string) => file.endsWith('.sql') && !file.endsWith('.down.sql'))
+      .sort((a: string, b: string) => {
+        const extractVersion = (name: string) => {
+          const match = name.match(/^V([0-9]+(?:\.[0-9]+)*)/i);
+          if (!match) return [] as number[];
+          return match[1].split('.').map(n => Number.parseInt(n, 10));
+        };
+
+        const va = extractVersion(a);
+        const vb = extractVersion(b);
+
+        if (va.length === 0 || vb.length === 0) return a.localeCompare(b);
+
+        const len = Math.max(va.length, vb.length);
+        for (let i = 0; i < len; i++) {
+          const na = va[i] ?? 0;
+          const nb = vb[i] ?? 0;
+          if (na !== nb) return na - nb;
+        }
+
+        return a.localeCompare(b);
+      });
 
     return allMigrations.filter((name: string) => !executedNames.has(name));
   }
@@ -366,4 +387,3 @@ async function main() {
 }
 
 main();
-
