@@ -25,7 +25,12 @@ class MigrationRunner {
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     });
 
-    this.migrationsDir = path.join(__dirname, 'migrations');
+    // Em produção (Docker), migrations estão em /app/src/migrations
+    // Em desenvolvimento, estão em src/migrations relativos a este arquivo
+    const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync('/app/src/migrations');
+    this.migrationsDir = isProduction
+      ? '/app/src/migrations'
+      : path.join(__dirname, 'migrations');
   }
 
   async ensureMigrationsTable(): Promise<void> {
