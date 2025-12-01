@@ -53,26 +53,30 @@ jobs:
 
       - name: Build Docker Image
         run: |
+          # Gerar versão única
+          VERSION=$(date +%Y%m%d-%H%M%S)
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          
           # Build da imagem
           docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
           docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          
-          # Versão com data
-          VERSION=$(date +%Y%m%d-%H%M%S)
           docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
+          
+          echo "Imagem buildada com tags:"
+          echo " - latest"
+          echo " - ${{ github.sha }}"
+          echo " - ${VERSION}"
 
       - name: Push Docker Images
         run: |
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          
-          VERSION=$(date +%Y%m%d-%H%M%S)
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
           
           echo "Imagens publicadas:"
-          echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "   - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo " - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
 
       - name: Setup Kubernetes
         run: |
