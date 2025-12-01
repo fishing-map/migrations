@@ -22,32 +22,41 @@ spec:
         command: ['sh', '-c']
         args:
         - |
+        args:
+        - |
           echo "Aguardando PostgreSQL estar disponível..."
+          RETRY=0
+          MAX_RETRIES=30
           until pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
-            echo "PostgreSQL não está pronto. Aguardando 5 segundos..."
-            sleep 5
+            RETRY=$((RETRY+1))
+            if [ $RETRY -gt $MAX_RETRIES ]; then
+              echo "Timeout: PostgreSQL não respondeu após ${MAX_RETRIES} tentativas"
+              exit 1
+            fi
+            echo "Tentativa $RETRY/$MAX_RETRIES - Aguardando 2 segundos..."
+            sleep 2
           done
           echo "PostgreSQL está pronto!"
         env:
         - name: DB_HOST
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_HOST
         - name: DB_PORT
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_PORT
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_USER
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: app-secrets
+              name: fishing-map-secrets
               key: DB_PASSWORD
 
       containers:

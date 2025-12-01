@@ -93,18 +93,51 @@ jobs:
           # Deletar job anterior se existir
           kubectl delete job db-migrations -n fishing-map --ignore-not-found=true
           
-          # Aplicar novo job (vai usar imagem :latest que acabamos de atualizar)
+          # Aplicar novo job
           kubectl apply -f k8s/migrations-job.yaml
           
-          echo " Aguardando execução das migrations..."
-          kubectl wait --for=condition=complete --timeout=600s job/db-migrations -n fishing-map || {
-            echo " Migrations falharam! Verificando logs..."
+          echo ""
+          echo "Aguardando pod iniciar..."
+          sleep 3
+          
+          # Mostrar status em tempo real
+          echo "Status do job:"
+          kubectl get job db-migrations -n fishing-map
+          
+          echo ""
+          echo "Status dos pods:"
+          kubectl get pods -n fishing-map -l app=migrations
+          
+          echo ""
+          echo "Aguardando conclusão (timeout: 5min)..."
+          echo "Acompanhe os logs em tempo real em outra aba:"
+          echo " kubectl logs -f -l app=migrations -n fishing-map"
+          echo ""
+          
+          # Aguardar com timeout reduzido (5min ao invés de 10min)
+          kubectl wait --for=condition=complete --timeout=300s job/db-migrations -n fishing-map || {
+            echo ""
+            echo "Migrations falharam ou timeout!"
+            echo ""
+            echo "Status final do job:"
+            kubectl get job db-migrations -n fishing-map
+            echo ""
+            echo "Status final dos pods:"
+            kubectl get pods -n fishing-map -l app=migrations
+            echo ""
+            echo "Últimos 100 linhas dos logs:"
             kubectl logs -l app=migrations -n fishing-map --tail=100
+            echo ""
+            echo "Eventos do pod:"
+            kubectl describe pod -l app=migrations -n fishing-map | grep -A 20 Events:
             exit 1
           }
           
+          echo ""
           echo "Migrations executadas com sucesso!"
-          kubectl logs -l app=migrations -n fishing-map --tail=20
+          echo ""
+          echo "Logs completos:"
+          kubectl logs -l app=migrations -n fishing-map
 
       - name: Verify Migrations
         run: |
