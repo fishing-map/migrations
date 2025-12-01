@@ -16,14 +16,24 @@ class MigrationRunner {
   private readonly migrationsDir: string;
 
   constructor() {
-    this.pool = new Pool({
+    const dbConfig = {
       host: process.env.DB_HOST || 'localhost',
       port: Number.parseInt(process.env.DB_PORT || '5432', 10),
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || process.env.DB_PASSWORD || 'postgres',
       database: process.env.DB_NAME || 'fishing_map',
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    });
+    };
+
+    console.log('Configuracao de conexao:');
+    console.log(`  Host: ${dbConfig.host}`);
+    console.log(`  Port: ${dbConfig.port}`);
+    console.log(`  User: ${dbConfig.user}`);
+    console.log(`  Database: ${dbConfig.database}`);
+    console.log(`  SSL: ${dbConfig.ssl ? 'habilitado' : 'desabilitado'}`);
+    console.log('');
+
+    this.pool = new Pool(dbConfig);
 
     // Em produção (Docker), migrations estão em /app/src/migrations
     // Em desenvolvimento, estão em src/migrations relativos a este arquivo
@@ -31,6 +41,20 @@ class MigrationRunner {
     this.migrationsDir = isProduction
       ? '/app/src/migrations'
       : path.join(__dirname, 'migrations');
+
+    console.log(`Diretorio de migrations: ${this.migrationsDir}`);
+    console.log('');
+  }
+
+  async validateConnection(): Promise<void> {
+    try {
+      const result = await this.pool.query('SELECT current_database(), current_user');
+      const { current_database, current_user } = result.rows[0];
+      console.log(`Conectado ao banco: ${current_database} como usuário: ${current_user}`);
+    } catch (error) {
+      console.error('Erro ao validar conexão com banco de dados:', error);
+      throw new Error('Falha na conexão com o banco de dados');
+    }
   }
 
   async ensureMigrationsTable(): Promise<void> {
@@ -42,8 +66,13 @@ class MigrationRunner {
       );
     `;
 
-    await this.pool.query(query);
-    console.log('✅ Tabela de migrations criada/verificada');
+    try {
+      await this.pool.query(query);
+      console.log('Tabela de migrations criada/verificada');
+    } catch (error) {
+      console.error('Erro ao criar tabela schema_migrations:', error);
+      throw error;
+    }
   }
 
   async getExecutedMigrations(): Promise<Migration[]> {
@@ -96,8 +125,9 @@ class MigrationRunner {
   }
 
   async runPendingMigrations(): Promise<void> {
-    console.log('🚀 Iniciando execução de migrations...\n');
+    console.log('Iniciando execução de migrations...\n');
 
+    await this.validateConnection();
     await this.ensureMigrationsTable();
 
     const pendingMigrations = await this.getPendingMigrations();
@@ -121,8 +151,9 @@ class MigrationRunner {
   }
 
   async undoLastMigration(): Promise<void> {
-    console.log('🔄 Desfazendo última migration...\n');
+    console.log('Desfazendo última migration...\n');
 
+    await this.validateConnection();
     await this.ensureMigrationsTable();
 
     const executedMigrations = await this.getExecutedMigrations();
@@ -174,8 +205,9 @@ class MigrationRunner {
   }
 
   async rollbackToVersion(targetVersion: string): Promise<void> {
-    console.log(`🔄 Rollback para versão: ${targetVersion}\n`);
+    console.log(`Rollback para versão: ${targetVersion}\n`);
 
+    await this.validateConnection();
     await this.ensureMigrationsTable();
 
     const executedMigrations = await this.getExecutedMigrations();
@@ -227,8 +259,9 @@ class MigrationRunner {
   }
 
   async rollbackSteps(steps: number): Promise<void> {
-    console.log(`🔄 Desfazendo ${steps} migration(s)...\n`);
+    console.log(`Desfazendo ${steps} migration(s)...\n`);
 
+    await this.validateConnection();
     await this.ensureMigrationsTable();
 
     const executedMigrations = await this.getExecutedMigrations();
@@ -260,9 +293,10 @@ class MigrationRunner {
   }
 
   async showStatus(): Promise<void> {
-    console.log('📊 Status das Migrations\n');
-    console.log('═'.repeat(60));
+    console.log('Status das Migrations\n');
+    console.log('='.repeat(60));
 
+    await this.validateConnection();
     await this.ensureMigrationsTable();
 
     const executedMigrations = await this.getExecutedMigrations();
