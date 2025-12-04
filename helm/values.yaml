@@ -1,0 +1,63 @@
+# Namespace para deploy
+namespace: fishing-map
+
+# Configuração da imagem
+image:
+  repository: registry.digitalocean.com/fishing-map-prod/migrations
+  pullPolicy: Always
+  # Tag será definida na pipeline via --set image.tag=$VERSION
+  tag: "latest"
+
+imagePullSecrets:
+  - name: registry-secret
+
+nameOverride: ""
+fullnameOverride: "db-migrations"
+
+# Configuração do Job
+job:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  activeDeadlineSeconds: 300
+
+# Recursos do container
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "250m"
+
+# Secret de onde buscar as variáveis de ambiente
+envFromSecret:
+  enabled: true
+  secretName: "fishing-map-secrets"
+
+# Variáveis de ambiente (não sensíveis)
+env:
+  NODE_ENV: "production"
+  DB_SSL: "require"
+
+# Lista de chaves que vêm do Secret
+secretKeys:
+  - DB_HOST
+  - DB_PORT
+  - DB_NAME
+  - DB_USER
+  - DB_PASSWORD
+  - DB_SCHEMA
+
+# Configuração do CronJob para verificação periódica (opcional)
+cronjob:
+  enabled: false
+  schedule: "0 6 * * 1"  # Segunda-feira às 6h
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+# Init container para aguardar o banco
+waitForDatabase:
+  enabled: true
+  image: postgres:15-alpine
+

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: fishing-map-migrations
+description: A Helm chart for Fishing Map Database Migrations
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
