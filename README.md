@@ -10,7 +10,7 @@ Este projeto gerencia as migrations do banco de dados PostgreSQL de forma **inde
 - ✅ **Versionamento semântico** (Flyway style)
 - ✅ **Pipeline automática** de deploy
 - ✅ **Rollback seguro** com arquivos `.down.sql`
-- ✅ **Jobs Kubernetes** com nomes únicos (sem conflitos)
+- ✅ **Helm Chart** para deploy no Kubernetes
 - ✅ **Auditoria completa** de execuções
 
 ## 🏗️ Estrutura
@@ -19,20 +19,24 @@ Este projeto gerencia as migrations do banco de dados PostgreSQL de forma **inde
 migrations/
 ├── src/
 │   ├── migrations/              # Arquivos SQL versionados
+│   │   ├── V1.0.0__create_schema.sql
 │   │   ├── V1.0.1__initial_schema.sql
-│   │   ├── V1.0.1__initial_schema.down.sql
 │   │   ├── V1.0.2__*.sql
 │   │   └── ...
 │   ├── run-migrations.ts        # Executor principal
 │   └── create-migration.ts      # Helper para criar migrations
-├── k8s/
-│   └── migrations-job.yaml      # Job Kubernetes
+├── helm/                        # Helm Chart
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/
+│       ├── _helpers.tpl
+│       ├── job.yaml             # Job para rodar migrations
+│       └── cronjob.yaml         # CronJob opcional
 ├── .github/
 │   └── workflows/
 │       └── deploy-migrations.yml  # Pipeline CI/CD
 ├── Dockerfile                   # Imagem Docker
-├── MIGRATION_GUIDE.md          # Guia completo (LEIA!)
-└── README.md                   # Este arquivo
+└── README.md                    # Este arquivo
 ```
 
 ## 🚀 Quick Start
@@ -41,10 +45,10 @@ migrations/
 
 ```bash
 # Instalar dependências (primeira vez)
-npm install
+pnpm install
 
 # Criar migration
-npm run migration:create -- --name=add_comments_table
+pnpm run migration:create -- --name=add_comments_table
 
 # Isso cria:
 # - src/migrations/V1.0.X__add_comments_table.sql (UP)
@@ -349,4 +353,3 @@ psql -h localhost -U postgres -d fishing_map -c "DROP SCHEMA public CASCADE; CRE
 ---
 
 **🚀 Happy Migrating!**
-
