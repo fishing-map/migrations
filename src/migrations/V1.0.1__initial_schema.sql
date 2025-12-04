@@ -5,8 +5,8 @@
 -- Definir search_path para o schema da aplicação
 SET search_path TO fishing_map, public;
 
--- Criar ENUM para tipo de água (no schema fishing_map)
-CREATE TYPE fishing_map.incidents_water_type_enum AS ENUM('fresh', 'salt', 'brackish');
+-- Criar ENUM para tipo de água
+CREATE TYPE incidents_water_type_enum AS ENUM('fresh', 'salt', 'brackish');
 
 -- Tabela: confirmations
 CREATE TABLE confirmations (
@@ -33,7 +33,7 @@ CREATE TABLE incidents (
   geom GEOGRAPHY(Point, 4326) NOT NULL,
   accuracy DOUBLE PRECISION,
   depth DOUBLE PRECISION,
-  water_type fishing_map.incidents_water_type_enum NOT NULL DEFAULT 'fresh',
+  water_type incidents_water_type_enum NOT NULL DEFAULT 'fresh',
   water_temperature DOUBLE PRECISION,
   weather_conditions TEXT,
   weather_temperature DOUBLE PRECISION,
